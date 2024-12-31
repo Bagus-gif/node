@@ -1,0 +1,112 @@
+// ==UserScript==
+// @name         Captcha Token Fetcher
+// @namespace    https://viayoo.com/
+// @version      1.1
+// @description  Fetch Captcha token, reload page, wait for 5 seconds, and run for 20000 times
+// @author       Saifur Rahman Siam / Telegram : @TataCuto
+// @match        https://app.nodepay.ai/login
+// @grant        GM_xmlhttpRequest
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    let counter = 0;
+    const maxIterations = 20000; // Maksimal iterasi
+    let retryCounter = 0;
+    const maxRetries = 8; // Jumlah percobaan ulang jika token tidak ditemukan
+
+    // Fungsi untuk mengirim token ke port yang tersedia
+    function sendTokenToAvailablePort(captchaValue, ports = [5000]) {
+        let currentPortIndex = 0;
+
+        function tryPort() {
+            if (currentPortIndex >= ports.length) {
+                console.log('No available ports found, retrying from first port...');
+                currentPortIndex = 0;
+                setTimeout(() => tryPort(), 1000); // Coba lagi setelah 1 detik
+                return;
+            }
+
+            const port = ports[currentPortIndex];
+            const url = `http://localhost:${port}/post?token=${captchaValue}`;
+
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: url,
+                timeout: 2000,
+                onload: function(response) {
+                    if (response.responseText === 'successful') {
+                        console.log(`Token sent successfully to port ${port}`);
+                        counter++;
+                        retryCounter = 0;
+
+                        if (counter < maxIterations) {
+                            console.log(`Iteration ${counter} completed.`);
+                            setTimeout(() => {
+                                console.log('Reloading page...');
+                                location.reload(); // Reload dengan delay
+                            }, 5000); // Delay sebelum reload
+                        } else {
+                            console.log('Completed all iterations, stopping.');
+                        }
+                    } else {
+                        console.log(`Port ${port} failed, trying next port...`);
+                        currentPortIndex++;
+                        tryPort();
+                    }
+                },
+                onerror: function() {
+                    console.log(`Error with port ${port}, trying next port...`);
+                    currentPortIndex++;
+                    tryPort();
+                },
+                ontimeout: function() {
+                    console.log(`Timeout on port ${port}, trying next port...`);
+                    currentPortIndex++;
+                    tryPort();
+                }
+            });
+        }
+
+        tryPort();
+    }
+
+    // Fungsi untuk mengklik checkbox CAPTCHA
+    function clickCaptchaCheckbox() {
+        const captchaCheckbox = document.querySelector('input[name="cf-turnstile-response"]');
+        if (captchaCheckbox) {
+            console.log('Clicking CAPTCHA checkbox...');
+            captchaCheckbox.click();
+        } else {
+            console.log('CAPTCHA checkbox not found.');
+        }
+    }
+
+    // Fungsi untuk memeriksa token CAPTCHA
+    function checkCaptchaToken() {
+        const captchaInput = document.querySelector('input[name="cf-turnstile-response"]');
+        if (captchaInput && captchaInput.value) {
+            const captchaValue = captchaInput.value;
+            console.log('CAPTCHA token fetched:', captchaValue);
+            sendTokenToAvailablePort(captchaValue);
+        } else {
+            retryCounter++;
+            if (retryCounter < maxRetries) {
+                console.log(`CAPTCHA token not yet available, retrying... (Attempt ${retryCounter} of ${maxRetries})`);
+                clickCaptchaCheckbox();
+                setTimeout(checkCaptchaToken, 3000); // Tunggu lebih lama untuk retry
+            } else {
+                console.log(`Failed to fetch CAPTCHA token after ${maxRetries} attempts, reloading page.`);
+                setTimeout(() => {
+                    console.log('Reloading page...');
+                    location.reload(); // Reload jika gagal setelah beberapa percobaan
+                }, 5000); // Delay sebelum reload
+            }
+        }
+    }
+
+    // Memulai proses
+    console.log('Starting CAPTCHA fetch process...');
+    checkCaptchaToken();
+})();
